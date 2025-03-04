@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client/edge'
 import { withAccelerate } from '@prisma/extension-accelerate'
 import {sign} from 'hono/jwt'
 import {verify} from 'hono/jwt'
-import {createBlogInput, updateBlogInput} from "@arkabanerjee999/medium-common"
+import {createBlogInput, updateBlogInput} from "@arkabanerjee999/medium-common1"
 
 export const blogRouter = new Hono<{
 	Bindings: {
@@ -17,19 +17,40 @@ export const blogRouter = new Hono<{
 
 blogRouter.use('/*', async (c, next) =>{
     const authHeader=c.req.header("authorization") || "";
-    const user = await verify(authHeader, c.env.JWT_SECRET)
-    if(!user){
-        c.status(401);
-		return c.json({ error: "unauthorized" });
+    try{
+        const user = await verify(authHeader, c.env.JWT_SECRET)
+        if(!user){
+            c.status(401);
+		    return c.json({ error: "unauthorized" });
+        }
+        c.set('userId', String(user.id));
+	    await next()  
     }
-    c.set('userId', String(user.id));
-	await next()  
-  })
+    catch(e) {
+        c.status(403);
+        return c.json({
+            message: "You are not logged in"
+        })
+    }
+
+    })
+    
 blogRouter.get('/bulk', async (c) => {
     const prisma = new PrismaClient({
         datasourceUrl: c.env.DATABASE_URL,
     }).$extends(withAccelerate())
-    const posts= await prisma.post.findMany();
+    const posts= await prisma.post.findMany({
+        select:{
+            content:true,
+            title:true,
+            id:true,
+            author: {
+                select:{
+                    name:true
+                }
+            }
+        }
+    });
     return c.json({
         posts
     })
@@ -45,6 +66,16 @@ blogRouter.get('/:id', async (c) => {
             where: {
                 id: id
             },
+            select:{
+                id:true,
+                title:true,
+                content:true,
+                author:{
+                    select:{
+                        name:true
+                    }
+                }
+            }
         })
         return c.json({
             post
